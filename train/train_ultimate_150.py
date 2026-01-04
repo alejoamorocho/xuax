@@ -137,9 +137,13 @@ BATCH_SIZE = 16
 PREFILL_STEPS = 5_000  # Random exploration to fill buffer
 TRAIN_STEPS = 1_000_000  # Training steps
 TRAIN_EVERY = 4  # Train every N environment steps
-SAVE_EVERY = 10_000
+# Save every 50,000 steps to avoid Google Drive quota limits
+# For 1M training: 20 checkpoints
+SAVE_EVERY = 50_000
 
-SAVE_DIR = "train/dreamer_ultimate"
+# Use absolute path based on script location
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+SAVE_DIR = os.path.join(SCRIPT_DIR, "dreamer_ultimate")
 SAVE_PREFIX = "ultimate_150_xauusd"
 
 
