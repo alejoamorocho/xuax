@@ -712,10 +712,12 @@ def main():
         'gamma': 0.6,  # Optimized for intraday-swing
 
         # Section 1.2: Learning Rate with Annealing
-        'learning_rate': linear_schedule(3e-4, 1e-5),
+        # REDUCED from 3e-4 to 1e-4 to prevent early stopping
+        'learning_rate': linear_schedule(1e-4, 1e-5),
 
         # Section 1.3: Target KL for early stopping
-        'target_kl': 0.01,
+        # INCREASED from 0.01 to 0.05 to allow more learning per epoch
+        'target_kl': 0.05,
 
         # Section 1.4: Entropy coefficient
         'ent_coef': 0.02,
@@ -739,8 +741,8 @@ def main():
     }
 
     logger.info(f"  • gamma: {ppo_config['gamma']} (Section 1.1)")
-    logger.info(f"  • learning_rate: 3e-4 → 1e-5 (Section 1.2)")
-    logger.info(f"  • target_kl: {ppo_config['target_kl']} (Section 1.3)")
+    logger.info(f"  • learning_rate: 1e-4 → 1e-5 (Section 1.2 - reduced to prevent early stopping)")
+    logger.info(f"  • target_kl: {ppo_config['target_kl']} (Section 1.3 - increased to allow more learning)")
     logger.info(f"  • ent_coef: {ppo_config['ent_coef']} (Section 1.4)")
     logger.info(f"  • n_steps: {ppo_config['n_steps']} (Section 1.5)")
     logger.info(f"  • batch_size: {ppo_config['batch_size']} (Section 1.5)")
