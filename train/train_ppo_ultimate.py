@@ -735,8 +735,11 @@ def main():
     # ========== CREATE PPO MODEL ==========
     logger.info("\n🤖 Creating PPO model...")
 
-    SAVE_DIR = "train/ppo_ultimate"
+    # Use absolute path based on script location
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+    SAVE_DIR = os.path.join(SCRIPT_DIR, "ppo_ultimate")
     os.makedirs(SAVE_DIR, exist_ok=True)
+    logger.info(f"💾 Checkpoint directory: {SAVE_DIR}")
 
     if args.resume:
         logger.info(f"📂 Resuming from: {args.resume}")
@@ -749,13 +752,19 @@ def main():
         )
 
     # ========== CALLBACKS ==========
+    # Save every 50,000 timesteps (approximately every 12 rollouts with n_steps=4096)
+    # This ensures checkpoints even for shorter training runs
+    CHECKPOINT_FREQ = 50000 // ppo_config['n_steps']  # ~12 rollouts
+
     checkpoint_callback = CheckpointCallback(
-        save_freq=10000,
+        save_freq=CHECKPOINT_FREQ,
         save_path=SAVE_DIR,
         name_prefix="ppo_ultimate",
         save_replay_buffer=False,
         save_vecnormalize=True,
+        verbose=2,  # More verbose logging
     )
+    logger.info(f"📸 Checkpoints every ~{CHECKPOINT_FREQ * ppo_config['n_steps']:,} timesteps")
 
     trading_callback = TradingMetricsCallback(verbose=1)
 
