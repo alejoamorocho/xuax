@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# Virtual environment folders
+Lib/
+Scripts/
+Include/
+pyvenv.cfg
+pip-selfcheck.json
+
+# Special files
+nul
+
+# Data files (too large for git)
+data/*.csv
+data/*.json
+data/*.parquet
+*.zip
+
+# Model checkpoints
+train/*/*.pt
+train/*/*.zip
+train/*/*.json
+train/ppo_tensorboard/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
