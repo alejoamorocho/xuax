@@ -765,9 +765,9 @@ def main():
         )
 
     # ========== CALLBACKS ==========
-    # Save every 200,000 timesteps to avoid Google Drive quota limits
-    # With n_steps=4096, this is approximately every 49 rollouts
-    CHECKPOINT_FREQ = 200000 // ppo_config['n_steps']  # ~49 rollouts
+    # Save every 500,000 timesteps - NOT divided by n_steps!
+    # save_freq counts individual environment steps, not rollouts
+    CHECKPOINT_FREQ = 500000  # Save every 500k steps (6 checkpoints for 3M steps)
 
     checkpoint_callback = CheckpointCallback(
         save_freq=CHECKPOINT_FREQ,
@@ -777,7 +777,7 @@ def main():
         save_vecnormalize=True,
         verbose=1,
     )
-    logger.info(f"📸 Checkpoints every ~{CHECKPOINT_FREQ * ppo_config['n_steps']:,} timesteps")
+    logger.info(f"📸 Checkpoints every {CHECKPOINT_FREQ:,} timesteps")
 
     trading_callback = TradingMetricsCallback(verbose=1)
 
