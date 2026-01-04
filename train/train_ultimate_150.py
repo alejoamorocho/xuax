@@ -1,3 +1,11 @@
+# Path setup - MUST be first before any imports
+import os
+import sys
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(_script_dir)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
 """
 Train DreamerV3 Agent with ULTIMATE 150+ Features
 
@@ -17,8 +25,6 @@ Updated with PPO Gold Trading Improvements:
 Expected performance: 80-120%+ annual return, 3.5-4.5+ Sharpe ratio
 """
 
-import os
-import sys
 import argparse
 import numpy as np
 import torch
@@ -26,9 +32,6 @@ from tqdm import tqdm
 import logging
 import json
 from datetime import datetime
-
-# Add parent directory to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from features.ultimate_150_features import make_ultimate_features
 from models.dreamer_agent import DreamerV3Agent

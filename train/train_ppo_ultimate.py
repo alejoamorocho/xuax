@@ -1,3 +1,11 @@
+# Path setup - MUST be first before any imports
+import os
+import sys
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(_script_dir)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
 """
 Train PPO Agent with ULTIMATE 150+ Features
 ============================================
@@ -37,17 +45,12 @@ Validation (Section 5):
 Expected performance: 80-120%+ annual return, 3.5-4.5+ Sharpe ratio
 """
 
-import os
-import sys
 import argparse
 import numpy as np
 import torch
 import json
 from datetime import datetime
 from typing import Callable
-
-# Add parent directory to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Check for stable-baselines3
 try:
