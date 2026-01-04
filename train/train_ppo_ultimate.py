@@ -752,9 +752,9 @@ def main():
         )
 
     # ========== CALLBACKS ==========
-    # Save every 50,000 timesteps (approximately every 12 rollouts with n_steps=4096)
-    # This ensures checkpoints even for shorter training runs
-    CHECKPOINT_FREQ = 50000 // ppo_config['n_steps']  # ~12 rollouts
+    # Save every 200,000 timesteps to avoid Google Drive quota limits
+    # With n_steps=4096, this is approximately every 49 rollouts
+    CHECKPOINT_FREQ = 200000 // ppo_config['n_steps']  # ~49 rollouts
 
     checkpoint_callback = CheckpointCallback(
         save_freq=CHECKPOINT_FREQ,
@@ -762,7 +762,7 @@ def main():
         name_prefix="ppo_ultimate",
         save_replay_buffer=False,
         save_vecnormalize=True,
-        verbose=2,  # More verbose logging
+        verbose=1,
     )
     logger.info(f"📸 Checkpoints every ~{CHECKPOINT_FREQ * ppo_config['n_steps']:,} timesteps")
 
