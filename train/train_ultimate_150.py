@@ -1,10 +1,20 @@
 # Path setup - MUST be first before any imports
 import os
 import sys
-_script_dir = os.path.dirname(os.path.abspath(__file__))
-_project_root = os.path.dirname(_script_dir)
+
+# Handle both local and Colab environments
+if os.path.exists('/content/XAUX'):
+    # Running in Google Colab
+    _project_root = '/content/XAUX'
+else:
+    # Running locally
+    _script_dir = os.path.dirname(os.path.abspath(__file__))
+    _project_root = os.path.dirname(_script_dir)
+
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
+print(f"[DEBUG] Project root: {_project_root}")
+print(f"[DEBUG] sys.path[0]: {sys.path[0]}")
 
 """
 Train DreamerV3 Agent with ULTIMATE 150+ Features
