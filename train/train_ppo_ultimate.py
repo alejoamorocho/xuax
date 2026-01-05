@@ -708,24 +708,26 @@ def main():
     logger.info("\n⚙️  PPO Configuration (from checklist):")
 
     ppo_config = {
-        # Section 1.1: Gamma
-        'gamma': 0.6,  # Optimized for intraday-swing
+        # Section 1.1: Gamma - CRITICAL FIX!
+        # gamma=0.6 meant agent only looked ~2.5 steps ahead -> over-trading
+        # gamma=0.98 means agent looks ~50 steps ahead -> longer-term thinking
+        'gamma': 0.98,  # CHANGED from 0.6! Research shows 0.97-0.99 optimal
 
         # Section 1.2: Learning Rate with Annealing
-        # REDUCED to prevent massive KL divergence
-        'learning_rate': linear_schedule(5e-5, 1e-5),
+        # Start higher for exploration, decay for fine-tuning
+        'learning_rate': linear_schedule(3e-4, 1e-5),  # CHANGED: start 3e-4 not 5e-5
 
         # Section 1.3: Target KL for early stopping
-        # DISABLED - let clip_range handle trust region instead
-        # KL was hitting 0.2-0.8 on step 0, causing immediate early stopping
+        # Keeping disabled - clip_range handles trust region
         'target_kl': None,
 
         # Section 1.4: Entropy coefficient
-        'ent_coef': 0.02,
+        # Reduced for more decisive actions (less random)
+        'ent_coef': 0.01,  # CHANGED from 0.02
 
         # Section 1.5: Batch size and n_steps
         'n_steps': 4096,
-        'batch_size': 128,
+        'batch_size': 256,  # CHANGED from 128 for more stable updates
 
         # Standard PPO parameters
         'n_epochs': 10,
@@ -741,12 +743,12 @@ def main():
         'tensorboard_log': './train/ppo_tensorboard/',
     }
 
-    logger.info(f"  • gamma: {ppo_config['gamma']} (Section 1.1)")
-    logger.info(f"  • learning_rate: 5e-5 → 1e-5 (Section 1.2 - conservative)")
-    logger.info(f"  • target_kl: {ppo_config['target_kl']} (Section 1.3 - DISABLED, using clip_range only)")
-    logger.info(f"  • ent_coef: {ppo_config['ent_coef']} (Section 1.4)")
-    logger.info(f"  • n_steps: {ppo_config['n_steps']} (Section 1.5)")
-    logger.info(f"  • batch_size: {ppo_config['batch_size']} (Section 1.5)")
+    logger.info(f"  • gamma: {ppo_config['gamma']} (CRITICAL: looks ~50 steps ahead now!)")
+    logger.info(f"  • learning_rate: 3e-4 → 1e-5 (exploration -> fine-tuning)")
+    logger.info(f"  • target_kl: {ppo_config['target_kl']} (DISABLED)")
+    logger.info(f"  • ent_coef: {ppo_config['ent_coef']} (reduced for decisive actions)")
+    logger.info(f"  • n_steps: {ppo_config['n_steps']}")
+    logger.info(f"  • batch_size: {ppo_config['batch_size']} (increased for stability)")
 
     # ========== CREATE PPO MODEL ==========
     logger.info("\n🤖 Creating PPO model...")
