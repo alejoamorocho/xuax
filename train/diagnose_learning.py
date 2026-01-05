@@ -109,25 +109,51 @@ def load_data():
     ]
 
     data_path = None
+    csv_file = None
+
     for path in possible_paths:
         if os.path.exists(path):
-            csv_files = [f for f in os.listdir(path) if f.endswith('.csv') and 'XAUUSD' in f]
-            if csv_files:
-                data_path = path
+            # First try XAUUSD, then any CSV with gold/xau, then first CSV
+            all_csvs = [f for f in os.listdir(path) if f.endswith('.csv')]
+
+            # Priority order
+            for pattern in ['XAUUSD', 'xauusd', 'gold', 'Gold', 'GOLD']:
+                matching = [f for f in all_csvs if pattern in f]
+                if matching:
+                    data_path = path
+                    csv_file = matching[0]
+                    break
+
+            # If no match, use first CSV that looks like price data
+            if csv_file is None and all_csvs:
+                # Skip small files (likely not main data)
+                for f in all_csvs:
+                    fpath = os.path.join(path, f)
+                    if os.path.getsize(fpath) > 1000000:  # > 1MB
+                        data_path = path
+                        csv_file = f
+                        break
+
+            if csv_file:
                 break
 
-    if data_path is None:
-        print("ERROR: No XAUUSD data found in any of these locations:")
+    if data_path is None or csv_file is None:
+        print("ERROR: No suitable data file found")
         for p in possible_paths:
-            exists = "EXISTS" if os.path.exists(p) else "NOT FOUND"
-            print(f"  {p} - {exists}")
-        raise FileNotFoundError("No XAUUSD data found")
+            if os.path.exists(p):
+                files = os.listdir(p)
+                print(f"\n{p}:")
+                for f in files[:20]:  # Show first 20 files
+                    size = os.path.getsize(os.path.join(p, f)) if os.path.isfile(os.path.join(p, f)) else 0
+                    print(f"  {f} ({size/1024:.1f} KB)")
+                if len(files) > 20:
+                    print(f"  ... and {len(files)-20} more files")
+        raise FileNotFoundError("No suitable data file found")
 
-    csv_files = [f for f in os.listdir(data_path) if f.endswith('.csv') and 'XAUUSD' in f]
     print(f"Found data at: {data_path}")
-    print(f"Using file: {csv_files[0]}")
+    print(f"Using file: {csv_file}")
 
-    df = pd.read_csv(os.path.join(data_path, csv_files[0]))
+    df = pd.read_csv(os.path.join(data_path, csv_file))
 
     feature_cols = [c for c in df.columns if c not in
                    ['date', 'time', 'datetime', 'open', 'high', 'low', 'close', 'volume', 'return']]
