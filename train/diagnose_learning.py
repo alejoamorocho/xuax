@@ -100,75 +100,97 @@ class LearningDiagnosticCallback(BaseCallback):
 
 
 def load_data():
-    """Load training data."""
-    # Try multiple possible data paths (local and Colab)
-    possible_paths = [
-        os.path.join(_project_root, 'data'),
-        '/content/XAUX/data',
-        '/content/drive/MyDrive/XAUX/data',
-    ]
+    """Load training data using the same feature engineering as training."""
+    print("Loading features using ultimate_150_features...")
 
-    data_path = None
-    csv_file = None
+    try:
+        # Use the same feature engineering as training
+        from features.ultimate_150_features import make_ultimate_features
 
-    for path in possible_paths:
-        if os.path.exists(path):
-            # First try XAUUSD, then any CSV with gold/xau, then first CSV
-            all_csvs = [f for f in os.listdir(path) if f.endswith('.csv')]
+        X, returns, timestamps = make_ultimate_features(base_timeframe='M5')
 
-            # Priority order
-            for pattern in ['XAUUSD', 'xauusd', 'gold', 'Gold', 'GOLD']:
-                matching = [f for f in all_csvs if pattern in f]
-                if matching:
-                    data_path = path
-                    csv_file = matching[0]
-                    break
+        # Get feature names
+        feature_names = [f"feature_{i}" for i in range(X.shape[1])]
 
-            # If no match, use first CSV that looks like price data
-            if csv_file is None and all_csvs:
-                # Skip small files (likely not main data)
-                for f in all_csvs:
-                    fpath = os.path.join(path, f)
-                    if os.path.getsize(fpath) > 1000000:  # > 1MB
-                        data_path = path
-                        csv_file = f
-                        break
+        # Try to get actual feature names from the module
+        try:
+            from features.ultimate_150_features import get_feature_names
+            feature_names = get_feature_names()
+        except:
+            pass
 
-            if csv_file:
+        print(f"Loaded {X.shape[0]} samples with {X.shape[1]} features")
+
+        # Load prices separately for the environment
+        data_path = os.path.join(_project_root, 'data')
+        if not os.path.exists(data_path):
+            data_path = '/content/XAUX/data'
+        if not os.path.exists(data_path):
+            data_path = '/content/drive/MyDrive/XAUX/data'
+
+        prices = None
+        csv_files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
+        for pattern in ['XAUUSD', 'xauusd', 'gold', 'Gold']:
+            matching = [f for f in csv_files if pattern in f.lower()]
+            if matching:
+                df = pd.read_csv(os.path.join(data_path, matching[0]))
+                if 'close' in df.columns:
+                    prices = df['close'].values.astype(np.float32)
+                    # Align prices with features
+                    if len(prices) > len(X):
+                        prices = prices[-len(X):]
+                    elif len(prices) < len(X):
+                        X = X[-len(prices):]
+                        returns = returns[-len(prices):]
                 break
 
-    if data_path is None or csv_file is None:
-        print("ERROR: No suitable data file found")
-        for p in possible_paths:
-            if os.path.exists(p):
-                files = os.listdir(p)
-                print(f"\n{p}:")
-                for f in files[:20]:  # Show first 20 files
-                    size = os.path.getsize(os.path.join(p, f)) if os.path.isfile(os.path.join(p, f)) else 0
-                    print(f"  {f} ({size/1024:.1f} KB)")
-                if len(files) > 20:
-                    print(f"  ... and {len(files)-20} more files")
-        raise FileNotFoundError("No suitable data file found")
+        return X, returns, prices, feature_names
 
-    print(f"Found data at: {data_path}")
-    print(f"Using file: {csv_file}")
+    except ImportError as e:
+        print(f"Could not import ultimate_150_features: {e}")
+        print("Falling back to raw CSV loading...")
 
-    df = pd.read_csv(os.path.join(data_path, csv_file))
+        # Fallback to raw CSV (will have fewer features)
+        data_path = os.path.join(_project_root, 'data')
+        if not os.path.exists(data_path):
+            data_path = '/content/XAUX/data'
 
-    feature_cols = [c for c in df.columns if c not in
-                   ['date', 'time', 'datetime', 'open', 'high', 'low', 'close', 'volume', 'return']]
+        csv_files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
+        csv_file = None
+        for pattern in ['XAUUSD', 'xauusd', 'gold']:
+            matching = [f for f in csv_files if pattern in f.lower()]
+            if matching:
+                csv_file = matching[0]
+                break
 
-    if 'return' not in df.columns:
-        df['return'] = df['close'].pct_change().fillna(0)
+        if csv_file is None:
+            raise FileNotFoundError("No data file found")
 
-    X = df[feature_cols].values.astype(np.float32)
-    r = df['return'].values.astype(np.float32)
-    prices = df['close'].values.astype(np.float32) if 'close' in df.columns else None
+        df = pd.read_csv(os.path.join(data_path, csv_file))
 
-    X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
-    r = np.nan_to_num(r, nan=0.0, posinf=0.0, neginf=0.0)
+        feature_cols = [c for c in df.columns if c not in
+                       ['date', 'time', 'datetime', 'open', 'high', 'low', 'close', 'volume', 'return']]
 
-    return X, r, prices, feature_cols
+        if not feature_cols:
+            print("WARNING: No feature columns found! Creating basic features...")
+            # Create basic features from OHLCV
+            df['return'] = df['close'].pct_change().fillna(0)
+            df['volatility'] = df['return'].rolling(20).std().fillna(0)
+            df['momentum'] = df['close'].pct_change(10).fillna(0)
+            df['rsi'] = 50  # Placeholder
+            feature_cols = ['return', 'volatility', 'momentum']
+
+        if 'return' not in df.columns:
+            df['return'] = df['close'].pct_change().fillna(0)
+
+        X = df[feature_cols].values.astype(np.float32)
+        r = df['return'].values.astype(np.float32)
+        prices = df['close'].values.astype(np.float32) if 'close' in df.columns else None
+
+        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+        r = np.nan_to_num(r, nan=0.0, posinf=0.0, neginf=0.0)
+
+        return X, r, prices, feature_cols
 
 
 def analyze_feature_predictiveness(winner_features, loser_features, feature_names):
