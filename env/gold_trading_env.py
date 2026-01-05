@@ -216,14 +216,40 @@ class GoldTradingEnv(gym.Env):
 
         return True
 
+    def _get_feature_snapshot(self):
+        """
+        Capture current feature values for trade analysis.
+        Returns dict with key feature values at current timestep.
+        """
+        if self.t >= len(self.X):
+            return {}
+
+        current_features = self.X[self.t]
+
+        # Return raw feature vector and some key statistics
+        snapshot = {
+            'step': self.t,
+            'feature_mean': float(np.mean(current_features)),
+            'feature_std': float(np.std(current_features)),
+            'feature_min': float(np.min(current_features)),
+            'feature_max': float(np.max(current_features)),
+            # Store last few feature values for key indicators
+            'raw_features': current_features.tolist() if len(current_features) < 50 else current_features[:50].tolist(),
+        }
+
+        return snapshot
+
     def _open_position(self):
-        """Open a new long position."""
+        """Open a new long position with feature snapshot."""
         current_price = self._get_current_price()
 
         # Calculate position size based on risk (2% of current balance)
         risk_amount = self.balance * self.risk_per_trade
         sl_distance = current_price * self.max_stop_loss_pct
         position_size = risk_amount / sl_distance if sl_distance > 0 else 0
+
+        # NEW: Capture feature snapshot at entry
+        entry_features = self._get_feature_snapshot()
 
         position = {
             'entry_price': current_price,
@@ -236,6 +262,8 @@ class GoldTradingEnv(gym.Env):
             'max_unrealized_pnl_pct': 0.0,
             'unrealized_pnl': 0.0,
             'unrealized_pnl_pct': 0.0,
+            # NEW: Feature tracking
+            'entry_features': entry_features,
         }
 
         self.positions.append(position)
@@ -301,7 +329,7 @@ class GoldTradingEnv(gym.Env):
         return closed_trades
 
     def _close_position(self, position_idx: int, reason: str = "manual") -> dict:
-        """Close a specific position."""
+        """Close a specific position with detailed feature analysis."""
         if position_idx >= len(self.positions):
             return {'pnl': 0, 'reason': 'invalid_index'}
 
@@ -318,6 +346,9 @@ class GoldTradingEnv(gym.Env):
         else:
             efficiency = 1.0 if pnl_pct >= 0 else 0.0
 
+        # NEW: Capture exit features
+        exit_features = self._get_feature_snapshot()
+
         # Update balance
         self.balance += pnl
 
@@ -330,7 +361,7 @@ class GoldTradingEnv(gym.Env):
             self.winning_trades += 1
         self.total_pnl += pnl
 
-        # Record trade
+        # Record trade with FULL feature analysis
         trade_info = {
             'entry_price': pos['entry_price'],
             'exit_price': current_price,
@@ -339,6 +370,11 @@ class GoldTradingEnv(gym.Env):
             'max_pnl_pct': pos['max_unrealized_pnl_pct'],
             'efficiency': efficiency,
             'duration': self.t - pos['entry_step'],
+            'entry_step': pos['entry_step'],
+            'exit_step': self.t,
+            # NEW: Feature snapshots for analysis
+            'entry_features': pos.get('entry_features', {}),
+            'exit_features': exit_features,
             'reason': reason,
             'trailing_was_active': pos['trailing_active'],
         }
