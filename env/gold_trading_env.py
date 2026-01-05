@@ -27,9 +27,14 @@ from gymnasium import spaces
 
 class GoldTradingEnv(gym.Env):
     """
-    Professional Gold Trading Environment.
+    Professional Gold Trading Environment v2.0
 
     Philosophy: Let winners run, cut losers short.
+
+    NEW in v2.0:
+    - Hold Bonus: Reward for holding winning positions longer
+    - Trade Frequency Penalty: Penalize over-trading
+    - Quality over Quantity: Better reward shaping
 
     Actions:
         0 = Stay flat / Close position
@@ -60,6 +65,9 @@ class GoldTradingEnv(gym.Env):
         # Multiple positions
         allow_multiple_positions: bool = True,
         max_positions: int = 3,
+        # NEW: Anti-overtrading parameters
+        max_trades_per_day: int = 8,        # Max trades per day (288 bars @ M5)
+        trade_cooldown: int = 12,           # Min bars between trades (1 hour @ M5)
     ):
         super().__init__()
 
@@ -82,6 +90,11 @@ class GoldTradingEnv(gym.Env):
         # Multiple positions
         self.allow_multiple_positions = allow_multiple_positions
         self.max_positions = max_positions
+
+        # NEW: Anti-overtrading parameters
+        self.max_trades_per_day = max_trades_per_day
+        self.trade_cooldown = trade_cooldown
+        self.bars_per_day = 288  # M5 timeframe
 
         # Observation space: window features + position state (8 features)
         obs_dim = self.window * self.X.shape[1] + 8
@@ -124,6 +137,16 @@ class GoldTradingEnv(gym.Env):
 
         # Episode flags
         self.hard_stop_triggered = False
+
+        # NEW: Trade frequency tracking
+        self.recent_trade_steps = []  # Steps when trades were opened
+        self.last_trade_step = -999   # Last trade step (for cooldown)
+        self.daily_trades = 0         # Trades today
+        self.current_day = 0          # Track current day
+
+        # NEW: Hold tracking for winners
+        self.consecutive_hold_steps = 0  # Steps holding same position
+        self.last_action = None          # Previous action
 
     def _get_current_price(self):
         """Get current price safely."""
@@ -334,35 +357,94 @@ class GoldTradingEnv(gym.Env):
             closed_trades.append(trade_info)
         return closed_trades
 
-    def _calculate_reward(self, closed_trades: list, action: int) -> float:
+    def _calculate_reward(self, closed_trades: list, action: int, opened_trade: bool = False) -> float:
         """
-        Calculate reward based on professional trading principles.
+        Calculate reward based on professional trading principles v2.0
+
+        NEW Features:
+        1. HOLD BONUS: Reward for holding winning positions longer
+        2. TRADE FREQUENCY PENALTY: Penalize over-trading
+        3. QUALITY OVER QUANTITY: Better reward shaping
 
         Key principles:
         1. Let winners run (penalize early close of winners)
         2. Cut losers short (reward quick exit of losers)
         3. Maximize profit capture (reward closing near peak)
         4. Preserve capital
+        5. Trade less, but better
         """
         reward = 0.0
         current_drawdown = self._get_current_drawdown()
 
-        # === CAPITAL PRESERVATION (Most Important) ===
+        # === 1. CAPITAL PRESERVATION (Most Important) ===
         capital_ratio = self.balance / self.initial_balance
         if capital_ratio > 1.0:
-            reward += 0.1 * (capital_ratio - 1.0)  # Bonus for profit
+            reward += 0.05 * (capital_ratio - 1.0)  # Bonus for profit
         else:
-            reward += 0.3 * (capital_ratio - 1.0)  # Stronger penalty for loss
+            reward += 0.2 * (capital_ratio - 1.0)   # Stronger penalty for loss
 
-        # === DRAWDOWN PENALTY (Progressive) ===
+        # === 2. DRAWDOWN PENALTY (Progressive) ===
         if current_drawdown > 0.10:
-            reward -= 0.3 * (current_drawdown - 0.10)
+            reward -= 0.2 * (current_drawdown - 0.10)
         if current_drawdown > 0.20:
-            reward -= 0.5 * (current_drawdown - 0.20)
+            reward -= 0.4 * (current_drawdown - 0.20)
         if current_drawdown > 0.25:
-            reward -= 1.0 * (current_drawdown - 0.25)
+            reward -= 0.8 * (current_drawdown - 0.25)
 
-        # === CLOSED TRADES REWARDS ===
+        # === 3. NEW: TRADE FREQUENCY PENALTY ===
+        # Penalize opening too many trades
+        if opened_trade:
+            # Base cost for every trade (forces selectivity)
+            reward -= 0.05
+
+            # Extra penalty if trading too frequently (cooldown)
+            bars_since_last = self.t - self.last_trade_step
+            if bars_since_last < self.trade_cooldown:
+                # Strong penalty for trading within cooldown
+                cooldown_penalty = 0.1 * (1 - bars_since_last / self.trade_cooldown)
+                reward -= cooldown_penalty
+
+            # Penalty for exceeding daily trade limit
+            if self.daily_trades > self.max_trades_per_day:
+                reward -= 0.15 * (self.daily_trades - self.max_trades_per_day)
+
+        # === 4. NEW: HOLD BONUS FOR WINNERS ===
+        # Reward for holding winning positions - THIS IS KEY!
+        for pos in self.positions:
+            unrealized_pct = pos['unrealized_pnl_pct']
+            hold_duration = self.t - pos['entry_step']
+
+            if unrealized_pct > 0:
+                # === WINNING POSITION - REWARD FOR HOLDING ===
+
+                # Time-scaled bonus: longer holds get more reward
+                # This encourages "let winners run"
+                time_factor = min(hold_duration / 24, 2.0)  # Cap at 2x after 2 hours
+
+                # Profit-scaled bonus: more profit = more bonus
+                profit_factor = min(unrealized_pct / self.min_profit_target, 3.0)  # Cap at 3x
+
+                # Combined hold bonus (significant!)
+                hold_bonus = 0.02 * time_factor * profit_factor
+                reward += hold_bonus
+
+                # Extra bonus when trailing is active (position is secured)
+                if pos['trailing_active']:
+                    reward += 0.01
+
+            elif unrealized_pct < 0:
+                # === LOSING POSITION - NO BONUS, SMALL PENALTY ===
+                # We want model to cut losers, not hold them
+
+                # Progressive penalty for holding losers too long
+                if hold_duration > 12:  # > 1 hour
+                    reward -= 0.01 * (hold_duration / 24)  # Small but cumulative
+
+                # Warning for positions approaching stop loss
+                if unrealized_pct < -self.max_stop_loss_pct * 0.7:
+                    reward -= 0.02  # Position getting dangerous
+
+        # === 5. CLOSED TRADES REWARDS (Quality Focus) ===
         for trade in closed_trades:
             pnl_pct = trade['pnl_pct']
             efficiency = trade['efficiency']
@@ -370,18 +452,22 @@ class GoldTradingEnv(gym.Env):
             reason = trade['reason']
             was_winner = pnl_pct > 0
 
-            # Base PnL reward (scaled)
-            reward += pnl_pct * 50
+            # Base PnL reward (scaled down from v1)
+            reward += pnl_pct * 30  # Reduced from 50 to focus on quality
 
             if was_winner:
                 # === WINNING TRADE ===
 
-                # EFFICIENCY BONUS: Closing near the maximum (this is key!)
-                # If we captured 80%+ of the max move, big bonus
+                # DURATION BONUS: Reward for holding winners longer
+                # This is key for "let winners run"
+                duration_bonus = min(duration / 48, 1.0) * 0.3  # Up to +0.3 for 4hr+ hold
+                reward += duration_bonus
+
+                # EFFICIENCY BONUS: Closing near the maximum
                 if efficiency >= 0.8:
-                    reward += 1.0
+                    reward += 0.8
                 elif efficiency >= 0.6:
-                    reward += 0.5
+                    reward += 0.4
                 elif efficiency >= 0.4:
                     reward += 0.2
 
@@ -391,44 +477,46 @@ class GoldTradingEnv(gym.Env):
 
                 # PENALTY for closing winners too early (not via trailing)
                 if reason == "manual" and pnl_pct < self.min_profit_target * 2:
-                    reward -= 0.3  # Closed winner too early
+                    reward -= 0.4  # Increased penalty
 
-                # BONUS for reaching minimum target
-                if pnl_pct >= self.min_profit_target:
-                    reward += 0.2
+                # BIG BONUS for excellent trades (high profit + long duration)
+                if pnl_pct >= 0.005 and duration >= 24:  # 0.5%+ held 2+ hours
+                    reward += 0.5  # Quality trade bonus
 
             else:
                 # === LOSING TRADE ===
 
                 # BONUS for cutting losses quickly
                 if duration < 12:  # < 1 hour in M5
-                    reward += 0.2  # Good! Cut loss fast
+                    reward += 0.15  # Good! Cut loss fast
+                elif duration < 24:  # < 2 hours
+                    reward += 0.05
+                else:
+                    # Penalty for holding losers too long
+                    reward -= 0.1 * min(duration / 48, 1.0)
 
                 # BONUS for using stop loss (capital protection)
                 if reason == "stop_loss":
                     reward += 0.1  # Respected risk management
 
-                # SMALLER penalty for small losses (controlled risk)
+                # BONUS for small losses (controlled risk)
                 if abs(pnl_pct) < self.max_stop_loss_pct * 0.5:
                     reward += 0.1  # Cut loss before max SL
 
-        # === OPEN POSITIONS MONITORING ===
-        for pos in self.positions:
-            unrealized_pct = pos['unrealized_pnl_pct']
+        # === 6. NEW: ACTION CONSISTENCY BONUS ===
+        # Reward for not flip-flopping (staying with decision)
+        if self.last_action is not None and action == self.last_action:
+            self.consecutive_hold_steps += 1
+            if self.consecutive_hold_steps > 6:  # 30 min of consistency
+                reward += 0.005  # Small but cumulative
+        else:
+            self.consecutive_hold_steps = 0
 
-            # Small reward for positions in profit
-            if unrealized_pct > 0:
-                reward += 0.01 * unrealized_pct * 10
-
-            # Warning for positions approaching stop loss
-            if unrealized_pct < -self.max_stop_loss_pct * 0.7:
-                reward -= 0.05  # Position getting dangerous
-
-        # === POSITION MANAGEMENT ===
-        # Reward for having multiple profitable positions
-        profitable_positions = sum(1 for p in self.positions if p['unrealized_pnl_pct'] > self.min_profit_target)
-        if profitable_positions > 1:
-            reward += 0.1 * profitable_positions
+        # === 7. POSITION MANAGEMENT ===
+        # Reward for having profitable positions (not just count)
+        total_unrealized = sum(p['unrealized_pnl_pct'] for p in self.positions)
+        if total_unrealized > self.min_profit_target:
+            reward += 0.05
 
         return reward
 
@@ -440,6 +528,13 @@ class GoldTradingEnv(gym.Env):
     def step(self, action: int):
         action = int(action)
         closed_trades = []
+        opened_trade = False  # NEW: Track if we opened a trade this step
+
+        # NEW: Track daily trades (reset at day boundary)
+        current_day = self.t // self.bars_per_day
+        if current_day != self.current_day:
+            self.current_day = current_day
+            self.daily_trades = 0
 
         # Update all positions with current price
         self._update_positions()
@@ -459,9 +554,20 @@ class GoldTradingEnv(gym.Env):
             # Open new position if allowed
             if self._can_open_new_position():
                 self._open_position()
+                opened_trade = True  # NEW: Mark that we opened a trade
+                self.last_trade_step = self.t
+                self.daily_trades += 1
+                self.recent_trade_steps.append(self.t)
 
-        # Calculate reward
-        reward = self._calculate_reward(closed_trades, action)
+        # NEW: Clean up old trade steps (keep last day only)
+        cutoff = self.t - self.bars_per_day
+        self.recent_trade_steps = [s for s in self.recent_trade_steps if s > cutoff]
+
+        # Calculate reward (NEW: pass opened_trade flag)
+        reward = self._calculate_reward(closed_trades, action, opened_trade)
+
+        # NEW: Track last action for consistency bonus
+        self.last_action = action
 
         # Track equity
         total_equity = self._get_total_equity()
@@ -495,6 +601,9 @@ class GoldTradingEnv(gym.Env):
             "winning_trades": self.winning_trades,
             "win_rate": self.winning_trades / max(1, self.total_trades),
             "hard_stop": self.hard_stop_triggered,
+            # NEW: Trade frequency info
+            "daily_trades": self.daily_trades,
+            "bars_since_last_trade": self.t - self.last_trade_step,
         }
 
         if closed_trades:
