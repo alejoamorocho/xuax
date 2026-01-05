@@ -101,11 +101,31 @@ class LearningDiagnosticCallback(BaseCallback):
 
 def load_data():
     """Load training data."""
-    data_path = os.path.join(_project_root, 'data')
+    # Try multiple possible data paths (local and Colab)
+    possible_paths = [
+        os.path.join(_project_root, 'data'),
+        '/content/XAUX/data',
+        '/content/drive/MyDrive/XAUX/data',
+    ]
+
+    data_path = None
+    for path in possible_paths:
+        if os.path.exists(path):
+            csv_files = [f for f in os.listdir(path) if f.endswith('.csv') and 'XAUUSD' in f]
+            if csv_files:
+                data_path = path
+                break
+
+    if data_path is None:
+        print("ERROR: No XAUUSD data found in any of these locations:")
+        for p in possible_paths:
+            exists = "EXISTS" if os.path.exists(p) else "NOT FOUND"
+            print(f"  {p} - {exists}")
+        raise FileNotFoundError("No XAUUSD data found")
 
     csv_files = [f for f in os.listdir(data_path) if f.endswith('.csv') and 'XAUUSD' in f]
-    if not csv_files:
-        raise FileNotFoundError("No XAUUSD data found")
+    print(f"Found data at: {data_path}")
+    print(f"Using file: {csv_files[0]}")
 
     df = pd.read_csv(os.path.join(data_path, csv_files[0]))
 
