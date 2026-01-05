@@ -708,10 +708,13 @@ def main():
     logger.info("\n⚙️  PPO Configuration (from checklist):")
 
     ppo_config = {
-        # Section 1.1: Gamma - CRITICAL FIX!
-        # gamma=0.6 meant agent only looked ~2.5 steps ahead -> over-trading
-        # gamma=0.98 means agent looks ~50 steps ahead -> longer-term thinking
-        'gamma': 0.98,  # CHANGED from 0.6! Research shows 0.97-0.99 optimal
+        # Section 1.1: Gamma - Balanced for intraday-swing (4hr trades)
+        # gamma=0.6 was too short (ignored anything beyond 1hr)
+        # gamma=0.95 gives good weight to 4-hour horizon:
+        #   - 12 bars (1hr): 54% weight
+        #   - 24 bars (2hr): 29% weight
+        #   - 48 bars (4hr): 8.5% weight (still meaningful)
+        'gamma': 0.95,  # Balanced for intraday with swing potential
 
         # Section 1.2: Learning Rate with Annealing
         # Start higher for exploration, decay for fine-tuning
@@ -743,7 +746,7 @@ def main():
         'tensorboard_log': './train/ppo_tensorboard/',
     }
 
-    logger.info(f"  • gamma: {ppo_config['gamma']} (CRITICAL: looks ~50 steps ahead now!)")
+    logger.info(f"  • gamma: {ppo_config['gamma']} (balanced for 4hr trades: 1hr=54%, 2hr=29%, 4hr=8.5%)")
     logger.info(f"  • learning_rate: 3e-4 → 1e-5 (exploration -> fine-tuning)")
     logger.info(f"  • target_kl: {ppo_config['target_kl']} (DISABLED)")
     logger.info(f"  • ent_coef: {ppo_config['ent_coef']} (reduced for decisive actions)")
