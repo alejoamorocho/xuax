@@ -226,15 +226,16 @@ class GoldTradingEnv(gym.Env):
 
         current_features = self.X[self.t]
 
-        # Return raw feature vector and some key statistics
+        # Return raw feature vector and key statistics
+        # IMPORTANT: Store ALL features for winner/loser analysis
         snapshot = {
             'step': self.t,
             'feature_mean': float(np.mean(current_features)),
             'feature_std': float(np.std(current_features)),
             'feature_min': float(np.min(current_features)),
             'feature_max': float(np.max(current_features)),
-            # Store last few feature values for key indicators
-            'raw_features': current_features.tolist() if len(current_features) < 50 else current_features[:50].tolist(),
+            # Store ALL feature values for winner/loser differentiation analysis
+            'raw_features': current_features.tolist(),
         }
 
         return snapshot

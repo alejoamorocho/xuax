@@ -103,11 +103,30 @@ def load_data():
     """Load training data using the same feature engineering as training."""
     print("Loading features using ultimate_150_features...")
 
+    # Determine data directory
+    data_paths = [
+        os.path.join(_project_root, 'data'),
+        '/content/XAUX/data',
+        '/content/drive/MyDrive/XAUX/data',
+    ]
+
+    data_dir = None
+    for path in data_paths:
+        if os.path.exists(path) and os.path.isdir(path):
+            # Check if it has the main data file
+            if os.path.exists(os.path.join(path, 'xauusd_m5.csv')):
+                data_dir = path
+                print(f"Using data directory: {data_dir}")
+                break
+
+    if data_dir is None:
+        raise FileNotFoundError(f"No valid data directory found. Checked: {data_paths}")
+
     try:
         # Use the same feature engineering as training
         from features.ultimate_150_features import make_ultimate_features
 
-        X, returns, timestamps = make_ultimate_features(base_timeframe='M5')
+        X, returns, timestamps = make_ultimate_features(base_timeframe='M5', data_dir=data_dir)
 
         # Get feature names
         feature_names = [f"feature_{i}" for i in range(X.shape[1])]
@@ -121,19 +140,13 @@ def load_data():
 
         print(f"Loaded {X.shape[0]} samples with {X.shape[1]} features")
 
-        # Load prices separately for the environment
-        data_path = os.path.join(_project_root, 'data')
-        if not os.path.exists(data_path):
-            data_path = '/content/XAUX/data'
-        if not os.path.exists(data_path):
-            data_path = '/content/drive/MyDrive/XAUX/data'
-
+        # Load prices separately for the environment (use same data_dir)
         prices = None
-        csv_files = [f for f in os.listdir(data_path) if f.endswith('.csv')]
+        csv_files = [f for f in os.listdir(data_dir) if f.endswith('.csv')]
         for pattern in ['XAUUSD', 'xauusd', 'gold', 'Gold']:
             matching = [f for f in csv_files if pattern in f.lower()]
             if matching:
-                df = pd.read_csv(os.path.join(data_path, matching[0]))
+                df = pd.read_csv(os.path.join(data_dir, matching[0]))
                 if 'close' in df.columns:
                     prices = df['close'].values.astype(np.float32)
                     # Align prices with features
@@ -146,9 +159,11 @@ def load_data():
 
         return X, returns, prices, feature_names
 
-    except ImportError as e:
-        print(f"Could not import ultimate_150_features: {e}")
-        print("Falling back to raw CSV loading...")
+    except Exception as e:
+        print(f"ERROR loading ultimate_150_features: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        print("\nFalling back to raw CSV loading...")
 
         # Fallback to raw CSV (will have fewer features)
         data_path = os.path.join(_project_root, 'data')

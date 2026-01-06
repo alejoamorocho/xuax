@@ -86,7 +86,9 @@ def make_ultimate_features(base_timeframe='M5', data_dir='data'):
     base_data_file = {
         'M5': 'xauusd_m5.csv',
         'M15': 'xauusd_m15.csv',
-        'H1': 'xauusd_h1_from_m1.csv',
+        'H1': 'xauusd_h1.csv',
+        'H4': 'xauusd_h4.csv',
+        'D1': 'xauusd_d1.csv',
     }.get(base_timeframe, 'xauusd_m5.csv')
 
     df_gold = pd.read_csv(f"{data_dir}/{base_data_file}")
