@@ -589,6 +589,7 @@ def main():
     parser.add_argument('--device', type=str, default='auto', help='Device: cuda/cpu/auto')
     parser.add_argument('--base-tf', type=str, default='M5', help='Base timeframe')
     parser.add_argument('--resume', type=str, default=None, help='Resume from checkpoint')
+    parser.add_argument('--use-old-features', action='store_true', help='Use old 152 continuous features instead of new 264 signal features')
     args = parser.parse_args()
 
     logger.info("="*70)
@@ -597,11 +598,18 @@ def main():
     logger.info("="*70)
 
     # ========== LOAD FEATURES ==========
-    logger.info("\n📊 Loading Ultimate 150+ features...")
+    # Use PREDICTIVE features (signal-based) by default
+    # These have better winner/loser discrimination than continuous features
 
-    from features.ultimate_150_features import make_ultimate_features
-
-    X, returns, timestamps = make_ultimate_features(base_timeframe=args.base_tf)
+    if getattr(args, 'use_old_features', False):
+        logger.info("\n📊 Loading Ultimate 150+ features (old)...")
+        from features.ultimate_150_features import make_ultimate_features
+        X, returns, timestamps = make_ultimate_features(base_timeframe=args.base_tf)
+    else:
+        logger.info("\n📊 Loading PREDICTIVE SIGNAL features (new)...")
+        logger.info("   264 signal-based features (crossovers, breakouts, etc.)")
+        from features.predictive_features import make_predictive_features
+        X, returns, timestamps = make_predictive_features(base_timeframe=args.base_tf)
 
     logger.info(f"✅ Features loaded: {X.shape}")
     logger.info(f"✅ Date range: {timestamps[0]} to {timestamps[-1]}")

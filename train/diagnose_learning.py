@@ -123,10 +123,11 @@ def load_data():
         raise FileNotFoundError(f"No valid data directory found. Checked: {data_paths}")
 
     try:
-        # Use the same feature engineering as training
-        from features.ultimate_150_features import make_ultimate_features
+        # Use the NEW predictive signal features (same as training)
+        from features.predictive_features import make_predictive_features
 
-        X, returns, timestamps = make_ultimate_features(base_timeframe='M5', data_dir=data_dir)
+        X, returns, timestamps = make_predictive_features(base_timeframe='M5', data_dir=data_dir)
+        print(f"Using PREDICTIVE SIGNAL features: {X.shape[1]} features")
 
         # Get feature names
         feature_names = [f"feature_{i}" for i in range(X.shape[1])]
